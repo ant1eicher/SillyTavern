@@ -191,6 +191,7 @@ const CHAT_COMPLETION_SOURCES = {
     MAKERSUITE: 'makersuite',
     MISTRALAI: 'mistralai',
     CUSTOM: 'custom',
+    BEDROCK: 'bedrock',
     COHERE: 'cohere',
     PERPLEXITY: 'perplexity',
     GROQ: 'groq',
