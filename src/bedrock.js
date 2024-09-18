@@ -7,15 +7,15 @@ const { readSecret, SECRET_KEYS } = require('./endpoints/secrets');
 const getClient = (function() {
     const client = {};
     let aksk = '';
-    return function(region_name) {
-        const access_key = readSecret(SECRET_KEYS.BEDROCK_ACCESS_KEY) || '';
-        const secret_key = readSecret(SECRET_KEYS.BEDROCK_SECRET_KEY) || '';
+    return function(region_name, directories) {
+        const access_key = readSecret(directories, SECRET_KEYS.BEDROCK_ACCESS_KEY) || '';
+        const secret_key = readSecret(directories, SECRET_KEYS.BEDROCK_SECRET_KEY) || '';
         const _aksk = access_key + secret_key;
         const refresh = _aksk != aksk;
 
         if(! client[region_name] || refresh) {
             aksk = _aksk;
-            const secrets = readSecret(SECRET_KEYS.BEDROCK);
+            const secrets = readSecret(directories, SECRET_KEYS.BEDROCK);
             if (access_key && secret_key) {
                 client[region_name] = new BedrockClient({
                     region: region_name,
@@ -36,9 +36,9 @@ const getClient = (function() {
 const getRuntimeClient = (function() {
     const client = {};
     let aksk = '';
-    return function(region_name) {
-        const access_key = readSecret(SECRET_KEYS.BEDROCK_ACCESS_KEY) || '';
-        const secret_key = readSecret(SECRET_KEYS.BEDROCK_SECRET_KEY) || '';
+    return function(region_name, directories) {
+        const access_key = readSecret(directories, SECRET_KEYS.BEDROCK_ACCESS_KEY) || '';
+        const secret_key = readSecret(directories, SECRET_KEYS.BEDROCK_SECRET_KEY) || '';
         const _aksk = access_key + secret_key;
         const refresh = _aksk != aksk;
 
@@ -62,31 +62,31 @@ const getRuntimeClient = (function() {
     };
 })();
 
-async function listTextModels(region_name) {
+async function listTextModels(region_name, directories) {
     const command = new ListFoundationModelsCommand({ byOutputModality: 'TEXT' });
-    const data = await getClient(region_name).send(command);
+    const data = await getClient(region_name, directories).send(command);
 
     return data;
 }
 
-async function invokeModel(region_name, params) {
+async function invokeModel(region_name, directories, params) {
     const modelId = params.modelId;
     if (-1 === modelId.indexOf('claude-3')) {
         const command = new InvokeModelCommand(params);
-        const data = await getRuntimeClient(region_name).send(command);
+        const data = await getRuntimeClient(region_name, directories).send(command);
 
         return data;
     } else {
         const command = new InvokeModelCommand(params);
-        const data = await getRuntimeClient(region_name).send(command);
+        const data = await getRuntimeClient(region_name, directories).send(command);
 
         return data;
     }
 }
 
-async function invokeModelWithStreaming(region_name, params) {
+async function invokeModelWithStreaming(region_name, directories, params) {
     const command = new InvokeModelWithResponseStreamCommand(params);
-    const data = await getRuntimeClient(region_name).send(command);
+    const data = await getRuntimeClient(region_name, directories).send(command);
 
     return data;
 }

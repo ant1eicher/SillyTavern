@@ -557,7 +557,7 @@ async function sendMistralAIRequest(request, response) {
  * @param {express.Request} request Express request
  */
 function constructBedrockClaudePayload(request) {
-    let use_system_prompt = ( request.body.model.startsWith('anthropic.claude-2') || request.body.model.startsWith('anthropic.claude-3') ) && request.body.claude_use_sysprompt;
+    let use_system_prompt = (request.body.model.startsWith('anthropic.claude-2') || request.body.model.startsWith('anthropic.claude-3')) && request.body.claude_use_sysprompt;
     let converted_prompt = convertClaudeMessages(request.body.messages, request.body.assistant_prefill, use_system_prompt, request.body.human_sysprompt_message, request.body.char_name, request.body.user_name);
 
     // Add custom stop sequences
@@ -610,7 +610,7 @@ function constructBedrockMistralPayload(request) {
  */
 async function sendBedrockRequest(request, response) {
     const divider = '-'.repeat(process.stdout.columns);
-    const bedrock_region = request.body.bedrock_region || 'us-east-1';
+    const bedrock_region = request.body.bedrock_region || 'us-west-2';
     let modelRequestBody;
 
     try {
@@ -620,9 +620,9 @@ async function sendBedrockRequest(request, response) {
             controller.abort();
         });
 
-        if(request.body.model.startsWith('anthropic.')){
+        if (request.body.model.startsWith('anthropic.')) {
             modelRequestBody = constructBedrockClaudePayload(request);
-        } else if(request.body.model.startsWith('mistral.')){
+        } else if (request.body.model.startsWith('mistral.')) {
             modelRequestBody = constructBedrockMistralPayload(request);
         } else {
             console.log(color.red(`Unknown model family ${request.body.model}\n${divider}`));
@@ -636,37 +636,38 @@ async function sendBedrockRequest(request, response) {
             modelId: request.body.model, // required
         };
 
-        console.log('Bedrock request:', JSON.stringify(bedrockRequestBody));
+        console.log(request.body);
+        console.log(`Bedrock region ${bedrock_region} request:`, JSON.stringify(bedrockRequestBody));
 
         if (request.body.stream) {
-            const respBedrockStream = await invokeModelWithStreaming(bedrock_region, bedrockRequestBody);
+            const respBedrockStream = await invokeModelWithStreaming(bedrock_region, request.user.directories, bedrockRequestBody);
 
             // Pipe remote SSE stream to Express response
             forwardBedrockStreamResponse(respBedrockStream, response);
         } else {
-            const resp = await invokeModel(bedrock_region, bedrockRequestBody);
+            const resp = await invokeModel(bedrock_region, request.user.directories, bedrockRequestBody);
             const statusCode = resp['$metadata']['httpStatusCode'];
             const body = resp.body.transformToString();
 
-            if (statusCode !== 200 ){
-                console.log(color.red(`Claude API returned error: ${resp['$metadata']['httpStatusCode']} ${body}\n${divider}`));
+            if (statusCode !== 200) {
+                console.log(color.red(`Bedrock API returned error: ${resp['$metadata']['httpStatusCode']} ${body}\n${divider}`));
                 return response.status(statusCode).send({ error: true });
             }
 
-            console.log('Claude response:', body);
+            console.log('Bedrock response:', body);
 
             let content;
             // Wrap it back to OAI format
-            if(request.body.model.startsWith('anthropic.')){
+            if (request.body.model.startsWith('anthropic.')) {
                 content = JSON.parse(body)['content'][0]['text'];
-            } else if(request.body.model.startsWith('mistral.')){
+            } else if (request.body.model.startsWith('mistral.')) {
                 content = JSON.parse(body)['outputs'][0]['text'];
             }
             const reply = { choices: [{ 'message': { 'content': content } }] };
             return response.send(reply);
         }
     } catch (error) {
-        console.log(color.red(`Error communicating with Bedrock Claude: ${error}\n${divider}`));
+        console.log(color.red(`Error communicating with Bedrock ${request.body.model}: ${error}\n${divider}`));
         if (!response.headersSent) {
             return response.status(500).send({ error: true });
         } else {
@@ -781,7 +782,7 @@ router.post('/status', jsonParser, async function (request, response_getstatus_o
     let api_url;
     let api_key_openai;
     let headers;
-    let bedrock_region = 'us-east-1';
+    let bedrock_region;
 
     if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.OPENAI) {
         api_url = new URL(request.body.reverse_proxy || API_OPENAI).toString();
@@ -822,11 +823,11 @@ router.post('/status', jsonParser, async function (request, response_getstatus_o
 
     if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.BEDROCK) {
         try {
-            let resp = await listTextModels(bedrock_region);
+            let resp = await listTextModels(bedrock_region, request.user.directories);
             let models = resp.modelSummaries;
             response_getstatus_openai.send(models);
-            console.log('Available Bedrock Text models:', models);
-        } catch(e) {
+            console.log(`Available Bedrock Text models in region ${bedrock_region}:`, models);
+        } catch (e) {
             console.error(e);
 
             if (!response_getstatus_openai.headersSent) {

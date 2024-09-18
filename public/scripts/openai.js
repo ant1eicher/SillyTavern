@@ -4123,6 +4123,11 @@ async function onModelChange() {
         oai_settings.bedrock_model = value;
     }
 
+    if ($(this).is('#aws_region_select')) {
+        console.log('Bedrock region changed to', value);
+        oai_settings.bedrock_region = value;
+    }
+
     if (oai_settings.chat_completion_source == chat_completion_sources.SCALE) {
         if (oai_settings.max_context_unlocked) {
             $('#openai_max_context').attr('max', unlocked_max);
