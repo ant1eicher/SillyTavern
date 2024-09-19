@@ -455,27 +455,33 @@ async function forwardBedrockStreamResponse(from, to) {
     to.header('Content-Type', 'text/event-stream');
     to.header('Cache-Control', 'no-cache');
     to.header('Connection', 'keep-alive');
-    to.flushHeaders(); // flush the headers to establish SSE with client
+    to.flushHeaders();
 
-    for await (const event of from.body) {
-        let respCode = from.$metadata.httpStatusCode;
-
-        if (event.chunk && event.chunk.bytes) {
-            const chunk = Buffer.from(event.chunk.bytes).toString("utf-8");
-            to.write(`data: ${chunk}\n\n`);
-        } else if (
-            event.internalServerException ||
-            event.modelStreamErrorException ||
-            event.throttlingException ||
-            event.validationException
-        ) {
-            console.error(event);
-            break;
+    try {
+        for await (const event of from.body) {
+            let respCode = from.$metadata?.httpStatusCode;
+            if (event.chunk && event.chunk.bytes) {
+                const chunk = Buffer.from(event.chunk.bytes).toString("utf-8");
+                to.write(`data: ${chunk}\n\n`);
+            } else if (
+                event.internalServerException ||
+                event.modelStreamErrorException ||
+                event.throttlingException ||
+                event.validationException
+            ) {
+                console.error('Stream error:', event);
+                to.write(`data: ${JSON.stringify({ error: 'Stream error occurred' })}\n\n`);
+                break;
+            }
         }
+    } catch (error) {
+        console.error('Unexpected error:', error);
+        to.write(`data: ${JSON.stringify({ error : 'Unexpected error occurred' })}\n\n`);
+    } finally {
+        to.end();
     }
-
-    to.end()
 }
+
 
 /**
  * Makes an HTTP/2 request to the specified endpoint.
