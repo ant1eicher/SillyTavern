@@ -451,36 +451,53 @@ function forwardFetchResponse(from, to) {
  * @param {import('node-fetch').Response} from The Fetch API response to pipe from.
  * @param {Express.Response} to The Express response to pipe to.
  */
+const MAX_RETRIES = 3;
+const INITIAL_BACKOFF = 1000; // 1 second
+
 async function forwardBedrockStreamResponse(from, to) {
     to.header('Content-Type', 'text/event-stream');
     to.header('Cache-Control', 'no-cache');
     to.header('Connection', 'keep-alive');
     to.flushHeaders();
 
-    try {
-        for await (const event of from.body) {
-            let respCode = from.$metadata?.httpStatusCode;
-            if (event.chunk && event.chunk.bytes) {
-                const chunk = Buffer.from(event.chunk.bytes).toString("utf-8");
-                to.write(`data: ${chunk}\n\n`);
-            } else if (
-                event.internalServerException ||
-                event.modelStreamErrorException ||
-                event.throttlingException ||
-                event.validationException
-            ) {
-                console.error('Stream error:', event);
-                to.write(`data: ${JSON.stringify({ error: 'Stream error occurred' })}\n\n`);
-                break;
+    let retries = 0;
+
+    async function attemptStream() {
+        try {
+            for await (const event of from.body) {
+                let respCode = from.$metadata?.httpStatusCode;
+
+                if (event.chunk && event.chunk.bytes) {
+                    const chunk = Buffer.from(event.chunk.bytes).toString("utf-8");
+                    to.write(`data: ${chunk}\n\n`);
+                } else if (event.internalServerException || event.validationException) {
+                    console.error('Non-retryable stream error:', event);
+                    to.write(`data: ${JSON.stringify({ error: 'Stream error occurred' })}\n\n`);
+                    break;
+                } else if (event.modelStreamErrorException || event.throttlingException) {
+                    if (retries < MAX_RETRIES) {
+                        retries++;
+                        const backoffTime = INITIAL_BACKOFF * Math.pow(2, retries - 1);
+                        console.log(`Retry attempt ${retries}. Backing off for ${backoffTime}ms`);
+                        await new Promise(resolve => setTimeout(resolve, backoffTime));
+                        return await attemptStream(); // Retry
+                    } else {
+                        console.error('Max retries reached. Stream error:', event);
+                        to.write(`data: ${JSON.stringify({ error: 'Max retries reached' })}\n\n`);
+                        break;
+                    }
+                }
             }
+        } catch (error) {
+            console.error('Unexpected error:', error);
+            to.write(`data: ${JSON.stringify({ error: 'Unexpected error occurred' })}\n\n`);
         }
-    } catch (error) {
-        console.error('Unexpected error:', error);
-        to.write(`data: ${JSON.stringify({ error : 'Unexpected error occurred' })}\n\n`);
-    } finally {
-        to.end();
     }
+
+    await attemptStream();
+    to.end();
 }
+
 
 
 /**
